@@ -1,0 +1,95 @@
+name: Deploy Infrastructure and Run Script
+
+on:
+  push:
+    branches: [ main ]
+
+#--------------------------------------------------------------------------------------------
+# job #1 - deploying the infrastructure on AWS using terraform with the warper of terragenet
+#--------------------------------------------------------------------------------------------
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+
+    - name: Setup Terragrunt
+      uses: autero1/action-terragrunt@v1.1.0
+      with:
+        terragrunt_version: 0.38.7 # the current version is higher (v0.67.5), but after this worked for me, didn't wnat to change it...
+
+    - name: Terragrunt Apply
+      run: |
+        cd terraform
+        terragrunt apply-all --auto-approve --terragrunt-non-interactive
+        terraform output -json > terraform_output.json
+        echo "============= START ================"
+        echo "the output json is:"
+        cat terraform_output.json
+        echo "============= END =================="
+        mv terraform_output.json ../terraform_output.json
+
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    - name: Upload Terraform output
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-output
+        path: terraform_output.json
+
+#--------------------------------------------------------------------------------------------
+# job #2 - run the python script on the infrastructure created in job #1
+#--------------------------------------------------------------------------------------------
+
+  run-python-script:
+    needs: deploy-infrastructure
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+# set the pyton vesion
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+# update pip & install dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install boto3 requests
+
+# get the file with the terraform output from the previous job
+    - name: Download Terraform output
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-output
+        run: cat terraform_output.json
+
+# set the terraform output as a env variable
+    - name: Extract CloudFront domain and set as env variable
+      run: |
+        CLOUDFRONT_DOMAIN=$(grep -o '"value": *"[^"]*' terraform_output.json | cut -d'"' -f4 | head -n 1 | xargs)
+        echo CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN >> $GITHUB_ENV
+    
+# finally! run the python script (the AWS credentials are needed to upload the s3 file)
+    - name: Run Python script
+      run: |
+        cat terraform_output.json
+        python process_products.py
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
