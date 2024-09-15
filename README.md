@@ -30,7 +30,7 @@ This project demonstrates a complete DevOps pipeline for deploying AWS infrastru
    - AWS_ACCESS_KEY_ID
    - AWS_SECRET_ACCESS_KEY
 3. Update the `terragrunt.hcl` file with your specific S3 bucket for Terraform state.
-4. Update the `process_products.py` script with your S3 bucket name. the claudfront domain will be set automatically in the pipeline and will be used automatically in the python script.
+4. Update the `process_products.py` script (in line 26) twith the same S3 bucket name you used in the `terragrunt.hcl` file . the claudfront domain will be set automatically  in the pipeline and will be used automatically in the python script. 
 5. Push changes to the `main` branch to trigger the GitHub Actions workflow.
 
 ## Workflow Steps
